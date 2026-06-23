@@ -1,0 +1,32 @@
+3105 Course Project - Functionalities List,,,,,,,,,
+#,Functionality Name,,,,,,User Access,,
+,,,,,,,Admin,LGU,Donors / Users
+1,Register Account,,,,,,FALSE,TRUE,TRUE
+2,Login/Logout,,,,,,TRUE,TRUE,FALSE
+3,Manage Profile,,,,,,TRUE,TRUE,TRUE
+4,View Dashboard,,,,,,TRUE,TRUE,TRUE
+5,Receive Notifications,,,,,,TRUE,TRUE,TRUE
+6,Submit Food Donation,,,,,,FALSE,FALSE,TRUE
+7,Upload Food Photos,,,,,,FALSE,FALSE,TRUE
+8,Track Donation Status,,,,,,FALSE,FALSE,TRUE
+9,View Donation History,,,,,,FALSE,FALSE,TRUE
+10,Earn Donation Points,,,,,,FALSE,FALSE,TRUE
+11,View Rewards & Badges,,,,,,FALSE,FALSE,TRUE
+12,View Nearby LGU Food Banks,,,,,,FALSE,FALSE,TRUE
+13,Accept/Reject Donations,,,,,,FALSE,TRUE,FALSE
+14,Schedule Food Pickup,,,,,,FALSE,TRUE,FALSE
+15,Manage Donation Queue,,,,,,FALSE,TRUE,FALSE
+16,Validate Food Safety,,,,,,FALSE,TRUE,FALSE
+17,Manage Food Inventory,,,,,,FALSE,TRUE,FALSE
+18,Record Food Distribution,,,,,,FALSE,TRUE,FALSE
+19,Manage Beneficiary Records,,,,,,FALSE,TRUE,FALSE
+20,Generate Barangay Reports,,,,,,FALSE,TRUE,FALSE
+21,View Barangay Analytics,,,,,,FALSE,TRUE,FALSE
+22,Manage Donor Accounts,,,,,,TRUE,FALSE,FALSE
+23,Manage LGU Accounts,,,,,,TRUE,FALSE,FALSE
+24,Verify LGU Registration,,,,,,TRUE,FALSE,FALSE
+25,View System-wide Analytics,,,,,,TRUE,FALSE,FALSE
+26,Manage Reward Rules,,,,,,TRUE,FALSE,FALSE
+27,Manage Barangay Coverage,,,,,,TRUE,FALSE,FALSE
+28,Manage System Settings,,,,,,TRUE,FALSE,FALSE
+29,View Audit Logs,,,,,,TRUE,FALSE,FALSE
