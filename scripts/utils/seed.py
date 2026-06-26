@@ -83,7 +83,7 @@ async def main() -> None:
         await db.flush()
 
         # Demo LGU account linked to the first LGU
-        demo_lgu_email = "lgu.lahug@resqbites.local"
+        demo_lgu_email = "lgu.lahug@resqbites.org"
         demo_lgu = (
             await db.execute(select(User).where(User.email == demo_lgu_email))
         ).scalars().first()

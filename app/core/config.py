@@ -19,5 +19,5 @@ JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_HOURS: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_HOURS", "24"))
 
 # Seed admin (consumed by scripts/utils/seed.py) ------------------------------
-ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@resqbites.local")
+ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@resqbites.org")
 ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "admin12345")
