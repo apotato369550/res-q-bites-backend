@@ -429,6 +429,9 @@ async def record_distribution(
 
     await db.commit()
     dist = await db.get(
-        Distribution, dist.id, options=[selectinload(Distribution.items)]
+        Distribution,
+        dist.id,
+        options=[selectinload(Distribution.items)],
+        populate_existing=True,
     )
     return dist

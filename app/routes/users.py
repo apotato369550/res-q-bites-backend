@@ -18,7 +18,10 @@ async def read_me(
 ):
     # Re-load with the establishment profile eagerly attached.
     user = await db.get(
-        User, current_user.id, options=[selectinload(User.establishment_profile)]
+        User,
+        current_user.id,
+        options=[selectinload(User.establishment_profile)],
+        populate_existing=True,
     )
     return user
 
@@ -34,6 +37,9 @@ async def update_me(
         setattr(current_user, field, value)
     await db.commit()
     user = await db.get(
-        User, current_user.id, options=[selectinload(User.establishment_profile)]
+        User,
+        current_user.id,
+        options=[selectinload(User.establishment_profile)],
+        populate_existing=True,
     )
     return user

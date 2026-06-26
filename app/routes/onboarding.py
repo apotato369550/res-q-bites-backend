@@ -2,6 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.auth import get_current_user
 from app.db.models import EstablishmentProfile, User, UserRole
@@ -25,8 +26,12 @@ async def onboard_individual(
     if payload.phone is not None:
         current_user.phone = payload.phone
     await db.commit()
-    await db.refresh(current_user)
-    return current_user
+    return await db.get(
+        User,
+        current_user.id,
+        options=[selectinload(User.establishment_profile)],
+        populate_existing=True,
+    )
 
 
 @router.post("/establishment", response_model=UserOut)
@@ -63,5 +68,9 @@ async def onboard_establishment(
         current_user.phone = payload.phone
 
     await db.commit()
-    await db.refresh(current_user)
-    return current_user
+    return await db.get(
+        User,
+        current_user.id,
+        options=[selectinload(User.establishment_profile)],
+        populate_existing=True,
+    )
