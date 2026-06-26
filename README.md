@@ -7,6 +7,9 @@ community food banks, and distribute it to beneficiaries. Donors earn points and
 badges for completed donations.
 
 > No AI/LLM components — this is a plain CRUD + workflow API.
+>
+> Building the Flutter client? See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the
+> full endpoint reference, request/response schemas, enums, and auth model.
 
 ## Stack
 
@@ -18,18 +21,16 @@ badges for completed donations.
 ## Quickstart
 
 ```bash
-# 1. Create a virtual environment
-python -m venv .venv
-# Windows
-.venv\Scripts\activate
-# macOS/Linux
-source .venv/bin/activate
+# 1. Create + activate a virtual environment
+python -m venv venv
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # macOS/Linux
 
 # 2. Install dependencies
 pip install -r requirements.txt
 
 # 3. Configure (optional — sensible defaults exist)
-cp .env.example .env        # Windows: copy .env.example .env
+copy .env.example .env          # Windows;  cp on macOS/Linux
 
 # 4. Initialise + seed the database
 python scripts/utils/init_db.py
@@ -41,14 +42,18 @@ uvicorn app.main:app --reload
 
 Open the interactive API docs at **http://127.0.0.1:8000/docs**.
 
+> On Windows, if `python` resolves to the wrong interpreter, call the venv one
+> directly: `.\venv\Scripts\python.exe <script>`.
+
 ### Seeded accounts (from `seed.py`)
 
 | Role  | Email                          | Password    |
 |-------|--------------------------------|-------------|
-| Admin | `admin@resqbites.local`        | `admin12345`|
-| LGU   | `lgu.lahug@resqbites.local`    | `lgu12345`  |
+| Admin | `admin@resqbites.org`          | `admin12345`|
+| LGU   | `lgu.lahug@resqbites.org`      | `lgu12345`  |
 
-Donor accounts are created via `POST /auth/signup`.
+Donor accounts are created via `POST /auth/signup`. (Emails must use a valid
+public domain — reserved TLDs like `.local` are rejected by the email validator.)
 
 ## Try the core flow
 
@@ -72,7 +77,10 @@ app/
 ├── schemas/           # Pydantic request/response models
 └── services/          # security, history, notifications, gamification
 scripts/utils/         # init_db.py, seed.py
-tests/                 # end-to-end flow tests
+tests/
+├── smoke/             # in-process pytest (fast, no server)
+└── blackbox/          # live-server scripts that hit http://localhost:8000
+results/               # JSON logs produced by the black-box suite (gitignored)
 ```
 
 ## Roles & access
@@ -84,26 +92,63 @@ tests/                 # end-to-end flow tests
 | `lgu`           | Manage donation queue, inventory, beneficiaries, distribution, reports |
 | `admin`         | Manage users/LGUs, verify LGUs, reward rules, settings, audit logs  |
 
-LGU accounts must be linked to an `LGU` record via `managing_lgu_id` (the seed
-script does this; admins can set it through `/admin` endpoints).
+LGU accounts must be linked to an `LGU` record via `managing_lgu_id`. **There is no
+HTTP endpoint for this linkage** — it is done by `seed.py` (or a direct DB write).
+A freshly self-registered LGU account cannot act until linked.
 
-## Build phases
+## Testing
 
-- **Phase 1** — auth, onboarding, profiles, dashboard, notifications, donation
-  lifecycle (`pending → accepted → scheduled → completed`/`rejected`/`cancelled`),
-  history, nearby-LGU, points awarded on completion.
-- **Phase 2** — food-safety validation, inventory, beneficiaries, distribution.
-- **Phase 3** — gamification reads + badges, LGU/admin analytics & reports, full
-  admin surface.
+Two complementary suites — see [ARCHITECTURE.md](ARCHITECTURE.md#test-suites) for
+how each works internally.
 
-## Tests
+### 1. Smoke tests — `tests/smoke/` (fast, in-process, no server)
+
+pytest runs the app through an ASGI transport against a fresh throwaway SQLite DB
+per test. Nothing external required.
 
 ```bash
-pytest
+pytest                          # or:  .\venv\Scripts\python.exe -m pytest -q
 ```
 
-Tests run against an isolated temporary SQLite file and exercise the full Phase-1
-loop plus role-gating and auth checks.
+Expected: `4 passed`. (Two harmless deprecation/bcrypt warnings are normal.)
+The `pytest.ini` `testpaths = tests/smoke` ensures only this suite is collected.
+
+### 2. Black-box tests — `tests/blackbox/` (live server, produces logs)
+
+Standalone scripts that hit a **real running server** over HTTP and write a
+timestamped JSON log per run into `results/<type>_results/`. This is what catches
+issues the in-process suite can't (real HTTP, real serialization, seeded accounts).
+
+**Prerequisites:** a seeded DB and a running server.
+
+```bash
+# Terminal 1 — start the server
+python scripts/utils/init_db.py
+python scripts/utils/seed.py
+uvicorn app.main:app                 # serves http://localhost:8000
+
+# Terminal 2 — run any/all scripts
+python tests/blackbox/test_auth.py
+python tests/blackbox/test_individual_cannot_pickup.py
+python tests/blackbox/test_role_gating.py
+python tests/blackbox/test_donation_loop.py          # needs the seeded LGU
+python tests/blackbox/test_lgu_workflow.py           # needs the seeded LGU
+```
+
+Each script prints a one-line summary, e.g.
+`[PASS] auth run=ef59ddcc -> results/auth_results/2026-06-24T08-21-36_ef59ddcc.json`,
+exits `0` on pass / `1` on fail, and always writes a JSON log (steps, status codes,
+trimmed request/response, overall result). If the server is unreachable it writes an
+`UNREACHABLE` log and exits `2` — no traceback. Re-runs never collide (each generates
+unique test emails).
+
+| Script | Asserts |
+|--------|---------|
+| `test_auth` | signup, login, token use, wrong-password 401, no-token 401 |
+| `test_individual_cannot_pickup` | individuals cannot use `donation_method=pickup` (400) |
+| `test_role_gating` | donor token barred from LGU (403) and admin (403) endpoints |
+| `test_donation_loop` | full lifecycle + points + notification + history audit trail |
+| `test_lgu_workflow` | LGU login, pending/inventory/analytics, beneficiary→inventory→distribution |
 
 ## Notes
 
