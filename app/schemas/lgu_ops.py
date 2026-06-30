@@ -75,23 +75,11 @@ class BeneficiaryOut(BaseModel):
     created_at: datetime
 
 
-class DistributionItemIn(BaseModel):
-    inventory_item_id: int
-    quantity: float = Field(gt=0)
-
-
 class DistributionCreate(BaseModel):
     beneficiary_id: int
-    notes: str | None = None
-    items: list[DistributionItemIn]
-
-
-class DistributionItemOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
     inventory_item_id: int
-    quantity: float
+    quantity: float = Field(gt=0)
+    notes: str | None = None
 
 
 class DistributionOut(BaseModel):
@@ -100,7 +88,8 @@ class DistributionOut(BaseModel):
     id: int
     lgu_id: int
     beneficiary_id: int
+    inventory_item_id: int
+    quantity: float
     recorded_by: int | None = None
     notes: str | None = None
     distributed_at: datetime
-    items: list[DistributionItemOut] = []

@@ -100,10 +100,4 @@ class LGUOut(BaseModel):
     address: str | None = None
     contact_number: str | None = None
     barangay: str | None = None
-    latitude: float | None = None
-    longitude: float | None = None
     verified: bool
-
-
-class LGUNearbyOut(LGUOut):
-    distance_km: float | None = None

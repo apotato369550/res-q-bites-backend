@@ -6,15 +6,6 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 from app.db.models import EstablishmentType, UserRole
 
 
-class EstablishmentProfileOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    establishment_name: str
-    establishment_type: EstablishmentType
-    address: str | None = None
-    verified: bool
-
-
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -25,10 +16,13 @@ class UserOut(BaseModel):
     last_name: str | None = None
     phone: str | None = None
     is_active: bool
-    points_balance: int
     managing_lgu_id: int | None = None
     created_at: datetime
-    establishment_profile: EstablishmentProfileOut | None = None
+    # Establishment-donor fields (null for non-establishment accounts).
+    establishment_name: str | None = None
+    establishment_type: EstablishmentType | None = None
+    establishment_address: str | None = None
+    establishment_verified: bool | None = None
 
 
 class UserUpdate(BaseModel):
