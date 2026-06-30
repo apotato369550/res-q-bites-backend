@@ -18,7 +18,6 @@ from app.routes import (
     analytics,
     dashboard,
     donations,
-    gamification,
     lgu,
     notifications,
     onboarding,
@@ -117,5 +116,4 @@ app.include_router(notifications.router)
 app.include_router(donations.router)
 app.include_router(lgu.router)
 app.include_router(analytics.router)
-app.include_router(gamification.router)
 app.include_router(admin.router)
