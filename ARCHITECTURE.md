@@ -25,8 +25,7 @@ ResQBites routes surplus food **Donor → LGU → Beneficiary**:
 - **LGUs** (barangay-level government units) work a queue of incoming donations,
   accept/schedule/complete them, hold completed food as **inventory**, register
   **beneficiaries**, and record **distributions**.
-- **Donors** earn **points** and **badges** when their donations complete.
-- **Admins** manage users, LGUs, reward rules, settings, and audit logs.
+- **Admins** manage users and LGUs.
 
 It is a plain CRUD + workflow API — no AI/LLM.
 
@@ -68,7 +67,7 @@ app/
 │   └── session.py     # async engine, sessionmaker, get_db() dependency
 ├── routes/            # one router per resource; each declares its own full path
 ├── schemas/           # Pydantic request/response models
-└── services/          # history, notifications, gamification, security
+└── services/          # history, notifications, security
 scripts/utils/         # init_db.py, seed.py
 tests/smoke/           # in-process pytest
 tests/blackbox/        # live-server scripts
@@ -77,7 +76,7 @@ results/               # black-box JSON logs (gitignored)
 
 **Routers are registered with no prefix** (`app/main.py`); every route declares its
 full path. Registered: `onboarding, users, dashboard, notifications, donations, lgu,
-analytics, gamification, admin`.
+analytics, admin`.
 
 ## 4. Request lifecycle
 
@@ -86,7 +85,7 @@ HTTP request
   → FastAPI route (app/routes/*.py)         # thin orchestrator
     → Depends(get_current_user / require_*) # auth + role gate (app/core/auth.py)
     → Depends(get_db)                        # yields an AsyncSession (app/db/session.py)
-    → service helpers (app/services/*)       # history.record, notifications.notify, gamification.*
+    → service helpers (app/services/*)       # history.record, notifications.notify
     → db.commit()                            # the ROUTE commits, not the services
   → response_model (Pydantic) serializes the ORM object → JSON
 ```
@@ -115,14 +114,15 @@ inventory), `422` (request body/validation error, including invalid email domain
 
 ## 6. Data model & enums
 
-Core entities (all in `app/db/models.py`): `User`, `EstablishmentProfile`, `LGU`,
-`BarangayCoverage`, `Donation`, `DonationHistory`, `Notification`, `InventoryItem`,
-`Beneficiary`, `Distribution`, `DistributionItem`, `Badge`, `UserBadge`,
-`PointsLedger`, `RewardRule`, `Setting`, `AuditLog`.
+Core entities (all in `app/db/models.py`): `User`, `LGU`, `Donation`,
+`DonationHistory`, `Notification`, `InventoryItem`, `Beneficiary`, `Distribution`.
+Establishment-donor fields (`establishment_name`, `establishment_type`,
+`establishment_address`, `establishment_verified`) live on `User` directly (nullable;
+populated only for `role = establishment`).
 
-Relationships relevant to clients: `User 1—0..1 EstablishmentProfile`;
-`User 1—* Donation`; `Donation 1—* DonationHistory`; `LGU 1—* InventoryItem /
-Beneficiary / Distribution`; `Distribution 1—* DistributionItem`.
+Relationships relevant to clients: `User 1—* Donation`; `Donation 1—*
+DonationHistory`; `LGU 1—* InventoryItem / Beneficiary / Distribution`. Each
+`Distribution` draws from one `InventoryItem` for one `Beneficiary`.
 
 **Enums (exact string values — the API accepts/returns these literal strings):**
 
@@ -145,14 +145,12 @@ Beneficiary / Distribution`; `Distribution 1—* DistributionItem`.
 - **Individuals drop off only:** `individual` donors must use
   `donation_method=dropoff` with no `pickup_location` (else `400`). `establishment`
   donors may pick up or drop off; `pickup` requires `pickup_location`.
-- **On `complete`:** the LGU route awards points/badges
-  (`gamification.award_for_completion`, default 10 pts via the active `RewardRule`)
-  and creates an `InventoryItem` from the donation.
+- **On `complete`:** the LGU route creates an `InventoryItem` from the donation.
 - **Editing:** only `pending` donations can be edited (`PUT`) — else `409`.
 - **Photos:** base64 in `Donation.photo_base64`. List endpoints return
   `DonationSummary` (no photo); only the detail endpoint returns the full payload.
-- **Service helpers don't commit:** `history.record`, `notifications.notify`, and the
-  gamification helpers add to the session; the **calling route commits**.
+- **Service helpers don't commit:** `history.record` and `notifications.notify` add to
+  the session; the **calling route commits**.
 - **`expire_on_commit=False` caveat (for backend devs):** after `db.commit()`, a route
   that returns an ORM object whose `response_model` includes a **relationship** must
   re-load it eagerly *and* force it, e.g.
@@ -194,9 +192,6 @@ required role. Request/response names link to [§9](#9-dto--schema-reference).
 |--------|------|------|---------|----------|
 | GET | `/users/me` | Bearer | — | `UserOut` |
 | PUT | `/users/me` | Bearer | `UserUpdate` | `UserOut` |
-| GET | `/users/me/points` | donor | — | `PointsSummary` |
-| GET | `/users/me/badges` | donor | — | `list[UserBadgeOut]` |
-| GET | `/badges` | Bearer | — | `list[BadgeOut]` (catalog) |
 
 ### Dashboard
 
@@ -225,7 +220,7 @@ required role. Request/response names link to [§9](#9-dto--schema-reference).
 | POST | `/lgu/donations/{id}/accept` | lgu | `ActionNote` (optional) | `DonationOut` | → `accepted` |
 | POST | `/lgu/donations/{id}/reject` | lgu | `ActionNote` (optional) | `DonationOut` | → `rejected` |
 | POST | `/lgu/donations/{id}/schedule` | lgu | `ScheduleRequest` | `DonationOut` | → `scheduled` |
-| POST | `/lgu/donations/{id}/complete` | lgu | `ActionNote` (optional) | `DonationOut` | → `completed`, awards points + inventory |
+| POST | `/lgu/donations/{id}/complete` | lgu | `ActionNote` (optional) | `DonationOut` | → `completed`, creates inventory |
 | POST | `/lgu/donations/{id}/food-safety` | lgu | `FoodSafetyRequest` | `Message` | records result |
 
 ### LGU inventory / beneficiaries / distribution
@@ -251,12 +246,6 @@ required role. Request/response names link to [§9](#9-dto--schema-reference).
 | GET | `/lgu/analytics` | lgu | `{donations_by_status, donations_by_category, in_stock_items, total_distributions, total_beneficiaries}` |
 | GET | `/lgu/reports` | lgu | `{lgu_id, completed_donations, completed_by_category}` |
 
-### Nearby LGUs
-
-| Method | Path | Auth | Query | Response |
-|--------|------|------|-------|----------|
-| GET | `/lgus/nearby` | donor | `lat` (req), `lng` (req), `limit` (≤50) | `list[LGUNearbyOut]` (sorted by `distance_km`) |
-
 ### Notifications
 
 | Method | Path | Auth | Query | Response |
@@ -276,13 +265,6 @@ required role. Request/response names link to [§9](#9-dto--schema-reference).
 | PUT | `/admin/lgus/{id}` | admin | `LGUUpdate` | `LGUOut` |
 | POST | `/admin/lgus/{id}/verify` | admin | — | `LGUOut` |
 | GET | `/admin/analytics` | admin | — | system-wide dict |
-| GET / POST | `/admin/reward-rules` | admin | `RewardRuleCreate` | `RewardRuleOut` |
-| PUT | `/admin/reward-rules/{id}` | admin | `RewardRuleUpdate` | `RewardRuleOut` |
-| GET / POST | `/admin/barangay-coverage` | admin | `BarangayCoverageCreate` | `BarangayCoverageOut` |
-| DELETE | `/admin/barangay-coverage/{id}` | admin | — | `Message` |
-| GET | `/admin/settings` | admin | — | `list[SettingOut]` |
-| PUT | `/admin/settings` | admin | `SettingUpsert` | `SettingOut` |
-| GET | `/admin/audit-logs` | admin | `limit` (≤500) | `list[AuditLogOut]` |
 
 ## 9. DTO / schema reference
 
@@ -302,10 +284,10 @@ EstablishmentOnboarding  { establishment_name, establishment_type:EstablishmentT
 ### Users (`app/schemas/user.py`)
 
 ```
-EstablishmentProfileOut { establishment_name, establishment_type, address?, verified:bool }
 UserOut   { id:int, email, role:UserRole, first_name?, last_name?, phone?, is_active:bool,
-            points_balance:int, managing_lgu_id?:int, created_at:datetime,
-            establishment_profile?:EstablishmentProfileOut }
+            managing_lgu_id?:int, created_at:datetime, establishment_name?,
+            establishment_type?:EstablishmentType, establishment_address?,
+            establishment_verified?:bool }
 UserUpdate       { first_name?, last_name?, phone? }
 NotificationOut  { id:int, title, message?, is_read:bool, created_at:datetime }
 ```
@@ -326,9 +308,7 @@ DonationSummary { id, donor_id, lgu_id?, title, food_category, donation_method,
 DonationHistoryOut { id, action:str, notes?, actor_id?:int, created_at }
 ScheduleRequest { scheduled_pickup_at:datetime, notes? }
 ActionNote      { notes? }
-LGUOut          { id, name, address?, contact_number?, barangay?, latitude?:float,
-                  longitude?:float, verified:bool }
-LGUNearbyOut    { ...LGUOut, distance_km?:float }
+LGUOut          { id, name, address?, contact_number?, barangay?, verified:bool }
 ```
 
 ### LGU ops (`app/schemas/lgu_ops.py`)
@@ -343,29 +323,17 @@ InventoryItemOut    { id, lgu_id, donation_id?, food_category, quantity:float, u
 BeneficiaryCreate   { name, household_size?:int, barangay?, address?, contact?, notes? }
 BeneficiaryUpdate   { all optional }
 BeneficiaryOut      { id, lgu_id, name, household_size?, barangay?, address?, contact?, notes?, created_at }
-DistributionItemIn  { inventory_item_id:int, quantity:float(>0) }
-DistributionCreate  { beneficiary_id:int, notes?, items:[DistributionItemIn] }
-DistributionItemOut { id, inventory_item_id, quantity:float }
-DistributionOut     { id, lgu_id, beneficiary_id, recorded_by?:int, notes?,
-                      distributed_at:datetime, items:[DistributionItemOut]=[] }
+DistributionCreate  { beneficiary_id:int, inventory_item_id:int, quantity:float(>0), notes? }
+DistributionOut     { id, lgu_id, beneficiary_id, inventory_item_id, quantity:float,
+                      recorded_by?:int, notes?, distributed_at:datetime }
 ```
 
-### Gamification & admin (`app/schemas/admin.py`)
+### Admin (`app/schemas/admin.py`)
 
 ```
-PointsLedgerOut { id, donation_id?:int, points:int, reason?, created_at }
-PointsSummary   { balance:int, entries:[PointsLedgerOut] }
-BadgeOut        { id, code, name, description?, threshold_points:int }
-UserBadgeOut    { badge:BadgeOut, awarded_at:datetime }
-AdminUserOut    { id, email, role:str, first_name?, last_name?, is_active:bool,
-                  points_balance:int, created_at }
+AdminUserOut    { id, email, role:str, first_name?, last_name?, is_active:bool, created_at }
 AdminUserUpdate { is_active?, role? }              # note: cannot set managing_lgu_id
-LGUCreate / LGUUpdate          { name, address?, contact_number?, barangay?, latitude?, longitude? [, verified?] }
-RewardRuleCreate { name, points_per_donation:int=10, active:bool=True }
-RewardRuleOut    { id, name, points_per_donation, active, created_at }
-BarangayCoverageCreate { lgu_id:int, barangay }    BarangayCoverageOut { id, lgu_id, barangay }
-SettingUpsert  { key, value:any }                  SettingOut { key, value?:any }
-AuditLogOut    { id, actor_id?, action, entity_type?, entity_id?:int, detail?:any, created_at }
+LGUCreate / LGUUpdate          { name, address?, contact_number?, barangay? [, verified?] }
 ```
 
 ### Common (`app/schemas/common.py`)

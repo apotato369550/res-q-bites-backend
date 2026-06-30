@@ -6,23 +6,24 @@ Guidance for working in this repository.
 
 Backend for **ResQBites**, a food-donation platform for Cebu City (Flutter mobile
 client). Donors (individuals/establishments) post surplus food; **LGUs** receive,
-manage, and distribute it; donors earn points/badges. **No AI/LLM** — plain CRUD +
-workflow API. The structure follows `references/ARCHITECTURE.md` with all AI parts
-removed.
+manage, and distribute it. **No AI/LLM** — plain CRUD + workflow API. The schema was
+deliberately simplified to 8 core tables (no gamification, reward rules, audit logs,
+settings, or barangay coverage). The structure follows `references/ARCHITECTURE.md`
+with all AI parts removed.
 
 ## Stack & conventions
 
 - FastAPI (async) + SQLAlchemy 2.0 async + SQLite (`aiosqlite`).
 - JWT HS256 (`python-jose`) + bcrypt (`passlib`). Config via `os.getenv` + dotenv.
 - Routes are **thin orchestrators**; cross-cutting logic lives in `app/services/`
-  (`history.py`, `notifications.py`, `gamification.py`, `security.py`).
+  (`history.py`, `notifications.py`, `security.py`).
 - Routers are registered in `app/main.py` with **no prefix** — each route declares
   its own full path. Public endpoints (`/`, `/health`, `/auth/*`) are inline in
   `main.py`.
 - **No migrations.** Edit `app/db/models.py`, then re-run `scripts/utils/init_db.py`.
 - All ORM models live in the single file `app/db/models.py`. `created_at` uses
-  `server_default=func.now()`; categorical columns use SQL `Enum`; structured
-  fields use `JSON`.
+  `server_default=func.now()`; categorical columns use SQL `Enum`. Establishment-donor
+  fields live on `User` directly (`establishment_*`, nullable).
 
 ## Auth & roles
 
@@ -41,8 +42,9 @@ removed.
   notification.
 - **Individuals drop off only** (`donation_method=dropoff`, no `pickup_location`);
   establishments may pick up or drop off. Enforced in `app/routes/donations.py`.
-- On `complete`, the LGU route awards points/badges via
-  `services/gamification.award_for_completion(...)` and creates an `InventoryItem`.
+- On `complete`, the LGU route creates an `InventoryItem` from the donation.
+- A `distribution` is a single inventory item handed to a single beneficiary (with a
+  quantity); recording one decrements that inventory item's stock.
 - Photos are base64 in `Donation.photo_base64`; list views use `DonationSummary`
   (no photo) — keep the heavy payload off list endpoints.
 
@@ -51,16 +53,15 @@ removed.
 ```bash
 pip install -r requirements.txt
 python scripts/utils/init_db.py     # create tables
-python scripts/utils/seed.py        # admin + LGU + badges + reward rule
+python scripts/utils/seed.py        # admin + demo LGU + linked LGU account
 uvicorn app.main:app --reload       # dev server → /docs
 pytest                              # end-to-end tests
 ```
 
 ## Service helpers do not commit
 
-`history.record`, `notifications.notify`, and the gamification helpers add to the
-session but leave the **commit to the calling route**. Keep that contract when
-adding new flows.
+`history.record` and `notifications.notify` add to the session but leave the
+**commit to the calling route**. Keep that contract when adding new flows.
 
 ## Map to requirements
 

@@ -3,8 +3,7 @@
 FastAPI backend for **ResQBites — Saving Food, Feeding Hope**: a mobile platform
 (Flutter client) that reduces food waste in Cebu City. Individuals and
 establishments donate surplus food; **LGUs/barangays** receive it, manage it as
-community food banks, and distribute it to beneficiaries. Donors earn points and
-badges for completed donations.
+community food banks, and distribute it to beneficiaries.
 
 > No AI/LLM components — this is a plain CRUD + workflow API.
 >
@@ -61,7 +60,7 @@ public domain — reserved TLDs like `.local` are rejected by the email validato
 2. `POST /onboarding/individual` (Bearer token).
 3. `POST /donations` with `donation_method: "dropoff"`.
 4. Log in as the seeded LGU account → `POST /lgu/donations/{id}/accept` → `/schedule` → `/complete`.
-5. Back as the donor: `GET /users/me/points` shows the awarded points; `GET /notifications` shows updates.
+5. Back as the donor: `GET /notifications` shows the status updates; `GET /donations/history` lists completed donations.
 
 Authenticate in Swagger by sending the header `Authorization: Bearer <token>` (the
 `/docs` "Authorize" button, or pass it per request).
@@ -75,7 +74,7 @@ app/
 ├── db/                # async engine/session + ORM models
 ├── routes/            # one router per resource (donations, lgu, admin, ...)
 ├── schemas/           # Pydantic request/response models
-└── services/          # security, history, notifications, gamification
+└── services/          # security, history, notifications
 scripts/utils/         # init_db.py, seed.py
 tests/
 ├── smoke/             # in-process pytest (fast, no server)
@@ -87,10 +86,10 @@ results/               # JSON logs produced by the black-box suite (gitignored)
 
 | Role            | Capabilities                                                         |
 |-----------------|---------------------------------------------------------------------|
-| `individual`    | Donate (dropoff only), track, history, points/badges, nearby LGUs   |
+| `individual`    | Donate (dropoff only), track status, view history                   |
 | `establishment` | Donate (pickup or dropoff) + everything an individual can do         |
 | `lgu`           | Manage donation queue, inventory, beneficiaries, distribution, reports |
-| `admin`         | Manage users/LGUs, verify LGUs, reward rules, settings, audit logs  |
+| `admin`         | Manage users, manage + verify LGUs, system-wide analytics           |
 
 LGU accounts must be linked to an `LGU` record via `managing_lgu_id`. **There is no
 HTTP endpoint for this linkage** — it is done by `seed.py` (or a direct DB write).
@@ -147,7 +146,7 @@ unique test emails).
 | `test_auth` | signup, login, token use, wrong-password 401, no-token 401 |
 | `test_individual_cannot_pickup` | individuals cannot use `donation_method=pickup` (400) |
 | `test_role_gating` | donor token barred from LGU (403) and admin (403) endpoints |
-| `test_donation_loop` | full lifecycle + points + notification + history audit trail |
+| `test_donation_loop` | full lifecycle + notification + history audit trail |
 | `test_lgu_workflow` | LGU login, pending/inventory/analytics, beneficiary→inventory→distribution |
 
 ## Notes
