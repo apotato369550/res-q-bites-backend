@@ -1,0 +1,19 @@
+Here are the relationships shown in the ERD:
+
+A user can be an individual donor, an LGU user, an establishment, or an admin.
+A user can give zero or many donations; each donation belongs to exactly one user.
+A user can view zero or many donation history records; each donation history record is viewed by exactly one user.
+A user can receive zero or many notifications; each notification belongs to exactly one user.
+
+An LGU can administer zero or many users; a user may be assigned to zero or one LGU.
+An LGU can manage zero or many beneficiaries; each beneficiary belongs to exactly one LGU.
+An LGU can stock zero or many inventory items; each inventory item belongs to exactly one LGU.
+An LGU can perform zero or many distributions; each distribution belongs to exactly one LGU.
+An LGU can be assigned zero or many donations; each donation may be assigned to zero or one LGU.
+
+A donation can become zero or many inventory items; each inventory item may come from zero or one donation.
+A donation can log zero or many donation history records; each donation history record belongs to exactly one donation.
+
+A beneficiary can receive zero or many distributions; each distribution belongs to exactly one beneficiary.
+
+An inventory item can be used in zero or many distributions; each distribution uses exactly one inventory item.
