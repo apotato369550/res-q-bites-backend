@@ -3,8 +3,10 @@
 All tables live here (the reference keeps a single models module). Conventions:
 - ``created_at`` uses a server default of ``func.now()``.
 - Categorical columns use SQL ``Enum`` backed by Python ``enum.Enum``.
-- Structured/freeform fields use ``JSON``.
 - Child rows FK to their parent with ``ondelete="CASCADE"``.
+
+The schema is deliberately small (8 tables). Establishment-donor fields live on
+``users`` directly; a donation is distributed as a single ``distributions`` row.
 """
 from __future__ import annotations
 
@@ -12,17 +14,14 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
-    JSON,
     Boolean,
     DateTime,
     Enum,
-    Float,
     ForeignKey,
     Integer,
     Numeric,
     String,
     Text,
-    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -84,7 +83,7 @@ class InventoryStatus(str, enum.Enum):
     expired = "expired"
 
 
-# --- Phase 1: core -----------------------------------------------------------
+# --- Core --------------------------------------------------------------------
 class User(Base):
     __tablename__ = "users"
 
@@ -96,16 +95,17 @@ class User(Base):
     last_name: Mapped[str | None] = mapped_column(String(120))
     phone: Mapped[str | None] = mapped_column(String(40))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    points_balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # For role == lgu: which LGU this account administers.
     managing_lgu_id: Mapped[int | None] = mapped_column(
         ForeignKey("lgus.id", ondelete="SET NULL")
     )
+    # Establishment-donor fields (populated only when role == establishment).
+    establishment_name: Mapped[str | None] = mapped_column(String(200))
+    establishment_type: Mapped[EstablishmentType | None] = mapped_column(Enum(EstablishmentType))
+    establishment_address: Mapped[str | None] = mapped_column(String(400))
+    establishment_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    establishment_profile: Mapped["EstablishmentProfile | None"] = relationship(
-        back_populates="user", uselist=False, cascade="all, delete-orphan"
-    )
     donations: Mapped[list["Donation"]] = relationship(
         back_populates="donor", cascade="all, delete-orphan"
     )
@@ -113,23 +113,6 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     managing_lgu: Mapped["LGU | None"] = relationship(foreign_keys=[managing_lgu_id])
-
-
-class EstablishmentProfile(Base):
-    __tablename__ = "establishment_profiles"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
-    )
-    establishment_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    establishment_type: Mapped[EstablishmentType] = mapped_column(
-        Enum(EstablishmentType), nullable=False
-    )
-    address: Mapped[str | None] = mapped_column(String(400))
-    verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
-    user: Mapped["User"] = relationship(back_populates="establishment_profile")
 
 
 class LGU(Base):
@@ -140,8 +123,6 @@ class LGU(Base):
     address: Mapped[str | None] = mapped_column(String(400))
     contact_number: Mapped[str | None] = mapped_column(String(40))
     barangay: Mapped[str | None] = mapped_column(String(120), index=True)
-    latitude: Mapped[float | None] = mapped_column(Float)
-    longitude: Mapped[float | None] = mapped_column(Float)
     verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -216,7 +197,7 @@ class Notification(Base):
     user: Mapped["User"] = relationship(back_populates="notifications")
 
 
-# --- Phase 2: LGU operations -------------------------------------------------
+# --- LGU operations ----------------------------------------------------------
 class InventoryItem(Base):
     __tablename__ = "inventory_items"
 
@@ -257,6 +238,8 @@ class Beneficiary(Base):
 
 
 class Distribution(Base):
+    """One handout: a quantity of one inventory item given to one beneficiary."""
+
     __tablename__ = "distributions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -266,106 +249,10 @@ class Distribution(Base):
     beneficiary_id: Mapped[int] = mapped_column(
         ForeignKey("beneficiaries.id", ondelete="CASCADE"), nullable=False
     )
-    recorded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    notes: Mapped[str | None] = mapped_column(Text)
-    distributed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-    items: Mapped[list["DistributionItem"]] = relationship(
-        back_populates="distribution", cascade="all, delete-orphan"
-    )
-
-
-class DistributionItem(Base):
-    __tablename__ = "distribution_items"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    distribution_id: Mapped[int] = mapped_column(
-        ForeignKey("distributions.id", ondelete="CASCADE"), nullable=False
-    )
     inventory_item_id: Mapped[int] = mapped_column(
         ForeignKey("inventory_items.id", ondelete="RESTRICT"), nullable=False
     )
+    recorded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     quantity: Mapped[float] = mapped_column(Numeric(10, 2), default=0, nullable=False)
-
-    distribution: Mapped["Distribution"] = relationship(back_populates="items")
-
-
-# --- Phase 3: gamification, admin, analytics ---------------------------------
-class PointsLedger(Base):
-    __tablename__ = "points_ledger"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    donation_id: Mapped[int | None] = mapped_column(
-        ForeignKey("donations.id", ondelete="SET NULL")
-    )
-    points: Mapped[int] = mapped_column(Integer, nullable=False)
-    reason: Mapped[str | None] = mapped_column(String(200))
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-
-class Badge(Base):
-    __tablename__ = "badges"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    description: Mapped[str | None] = mapped_column(Text)
-    threshold_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-
-class UserBadge(Base):
-    __tablename__ = "user_badges"
-    __table_args__ = (UniqueConstraint("user_id", "badge_id", name="uq_user_badge"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    badge_id: Mapped[int] = mapped_column(
-        ForeignKey("badges.id", ondelete="CASCADE"), nullable=False
-    )
-    awarded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-
-class RewardRule(Base):
-    __tablename__ = "reward_rules"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    points_per_donation: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
-    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-
-class BarangayCoverage(Base):
-    __tablename__ = "barangay_coverage"
-    __table_args__ = (UniqueConstraint("lgu_id", "barangay", name="uq_lgu_barangay"),)
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    lgu_id: Mapped[int] = mapped_column(
-        ForeignKey("lgus.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    barangay: Mapped[str] = mapped_column(String(120), nullable=False)
-
-
-class SystemSetting(Base):
-    __tablename__ = "system_settings"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    key: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
-    value: Mapped[dict | None] = mapped_column(JSON)
-
-
-class AuditLog(Base):
-    __tablename__ = "audit_logs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    action: Mapped[str] = mapped_column(String(120), nullable=False)
-    entity_type: Mapped[str | None] = mapped_column(String(60))
-    entity_id: Mapped[int | None] = mapped_column(Integer)
-    detail: Mapped[dict | None] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    notes: Mapped[str | None] = mapped_column(Text)
+    distributed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
