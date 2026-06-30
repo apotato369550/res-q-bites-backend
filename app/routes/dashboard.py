@@ -52,7 +52,6 @@ async def dashboard(
             "total_donations": total,
             "completed_donations": completed,
             "active_donations": active,
-            "points_balance": current_user.points_balance,
         }
 
     if role == UserRole.lgu:

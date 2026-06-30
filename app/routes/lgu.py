@@ -5,13 +5,11 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.auth import require_lgu
 from app.db.models import (
     Beneficiary,
     Distribution,
-    DistributionItem,
     Donation,
     DonationStatus,
     FoodSafetyStatus,
@@ -38,7 +36,7 @@ from app.schemas.lgu_ops import (
     InventoryItemOut,
     InventoryItemUpdate,
 )
-from app.services import gamification, history
+from app.services import history
 from app.services.notifications import notify
 
 router = APIRouter(prefix="/lgu", tags=["lgu"])
@@ -169,7 +167,7 @@ async def complete(
     current_user: User = Depends(require_lgu),
     db: AsyncSession = Depends(get_db),
 ):
-    """Mark received/completed → award points, create an inventory item, notify."""
+    """Mark received/completed → create an inventory item, notify."""
     lgu_id = _require_lgu_id(current_user)
     donation = await _load_queue_donation(db, donation_id, lgu_id)
     if donation.status not in (DonationStatus.accepted, DonationStatus.scheduled):
@@ -190,14 +188,13 @@ async def complete(
             status=InventoryStatus.in_stock,
         )
     )
-    points = await gamification.award_for_completion(db, donation)
     await history.record(
         db, donation.id, "completed", actor_id=current_user.id,
         notes=payload.notes if payload else None,
     )
     await notify(
         db, donation.donor_id, "Donation completed",
-        f"Thank you! '{donation.title}' was received. You earned {points} points.",
+        f"Thank you! '{donation.title}' was received.",
     )
     await db.commit()
     await db.refresh(donation)
@@ -368,7 +365,6 @@ async def list_distributions(
     stmt = (
         select(Distribution)
         .where(Distribution.lgu_id == lgu_id)
-        .options(selectinload(Distribution.items))
         .order_by(Distribution.distributed_at.desc())
     )
     return (await db.execute(stmt)).scalars().all()
@@ -381,9 +377,7 @@ async def get_distribution(
     db: AsyncSession = Depends(get_db),
 ):
     lgu_id = _require_lgu_id(current_user)
-    dist = await db.get(
-        Distribution, dist_id, options=[selectinload(Distribution.items)]
-    )
+    dist = await db.get(Distribution, dist_id)
     if dist is None or dist.lgu_id != lgu_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Distribution not found")
     return dist
@@ -395,43 +389,30 @@ async def record_distribution(
     current_user: User = Depends(require_lgu),
     db: AsyncSession = Depends(get_db),
 ):
-    """Record a distribution and decrement the drawn inventory."""
+    """Record a distribution and decrement the drawn inventory item."""
     lgu_id = _require_lgu_id(current_user)
     beneficiary = await _get_beneficiary(db, payload.beneficiary_id, lgu_id)
+    item = await _get_inventory(db, payload.inventory_item_id, lgu_id)
+
+    qty = Decimal(str(payload.quantity))
+    if Decimal(str(item.quantity)) < qty:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Inventory item {item.id} has insufficient quantity",
+        )
+    item.quantity = float(Decimal(str(item.quantity)) - qty)
+    if item.quantity <= 0:
+        item.status = InventoryStatus.distributed
 
     dist = Distribution(
         lgu_id=lgu_id,
         beneficiary_id=beneficiary.id,
+        inventory_item_id=item.id,
         recorded_by=current_user.id,
+        quantity=payload.quantity,
         notes=payload.notes,
     )
     db.add(dist)
-    await db.flush()
-
-    for line in payload.items:
-        item = await _get_inventory(db, line.inventory_item_id, lgu_id)
-        qty = Decimal(str(line.quantity))
-        if Decimal(str(item.quantity)) < qty:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                f"Inventory item {item.id} has insufficient quantity",
-            )
-        item.quantity = float(Decimal(str(item.quantity)) - qty)
-        if item.quantity <= 0:
-            item.status = InventoryStatus.distributed
-        db.add(
-            DistributionItem(
-                distribution_id=dist.id,
-                inventory_item_id=item.id,
-                quantity=line.quantity,
-            )
-        )
-
     await db.commit()
-    dist = await db.get(
-        Distribution,
-        dist.id,
-        options=[selectinload(Distribution.items)],
-        populate_existing=True,
-    )
+    await db.refresh(dist)
     return dist

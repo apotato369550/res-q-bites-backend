@@ -1,13 +1,10 @@
 """Donor-facing donation endpoints — CSV #6, #7, #8, #9, #12."""
-from math import asin, cos, radians, sin, sqrt
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, require_donor
 from app.db.models import (
-    LGU,
     Donation,
     DonationMethod,
     DonationStatus,
@@ -22,7 +19,6 @@ from app.schemas.donation import (
     DonationOut,
     DonationSummary,
     DonationUpdate,
-    LGUNearbyOut,
 )
 from app.services import history
 
@@ -111,37 +107,6 @@ async def donation_history_list(
         .order_by(Donation.updated_at.desc())
     )
     return (await db.execute(stmt)).scalars().all()
-
-
-@router.get("/lgus/nearby", response_model=list[LGUNearbyOut])
-async def nearby_lgus(
-    lat: float = Query(...),
-    lng: float = Query(...),
-    limit: int = Query(default=10, le=50),
-    current_user: User = Depends(require_donor),
-    db: AsyncSession = Depends(get_db),
-):
-    """Verified LGU food banks sorted by great-circle distance (haversine)."""
-    lgus = (
-        await db.execute(select(LGU).where(LGU.verified.is_(True)))
-    ).scalars().all()
-
-    def distance_km(lgu: LGU) -> float | None:
-        if lgu.latitude is None or lgu.longitude is None:
-            return None
-        r = 6371.0
-        dlat = radians(lgu.latitude - lat)
-        dlng = radians(lgu.longitude - lng)
-        a = sin(dlat / 2) ** 2 + cos(radians(lat)) * cos(radians(lgu.latitude)) * sin(dlng / 2) ** 2
-        return round(2 * r * asin(sqrt(a)), 2)
-
-    results = []
-    for lgu in lgus:
-        item = LGUNearbyOut.model_validate(lgu)
-        item.distance_km = distance_km(lgu)
-        results.append(item)
-    results.sort(key=lambda x: (x.distance_km is None, x.distance_km or 0.0))
-    return results[:limit]
 
 
 @router.get("/donations/{donation_id}", response_model=DonationOut)
