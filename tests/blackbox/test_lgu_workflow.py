@@ -78,7 +78,8 @@ def main() -> int:
         token=lgu_token,
         json={
             "beneficiary_id": beneficiary_id,
-            "items": [{"inventory_item_id": item_id, "quantity": 1}],
+            "inventory_item_id": item_id,
+            "quantity": 1,
         },
     )
 

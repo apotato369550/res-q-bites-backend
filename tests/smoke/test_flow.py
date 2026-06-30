@@ -1,4 +1,4 @@
-"""End-to-end Phase-1 donation loop + gamification side effects."""
+"""End-to-end donation loop + notification/history side effects."""
 import pytest
 from sqlalchemy import select
 
@@ -13,8 +13,7 @@ def _auth(token: str) -> dict:
 async def _make_lgu_account(email: str) -> None:
     """Create an LGU record and link the LGU user account to it."""
     async with AsyncSessionLocal() as db:
-        lgu = LGU(name="Test LGU", barangay="Lahug", verified=True,
-                  latitude=10.334, longitude=123.90)
+        lgu = LGU(name="Test LGU", barangay="Lahug", verified=True)
         db.add(lgu)
         await db.flush()
         user = (await db.execute(select(User).where(User.email == email))).scalars().first()
@@ -66,15 +65,7 @@ async def test_full_donation_loop(client):
     r = await client.post(f"/lgu/donations/{donation_id}/complete", headers=_auth(lgu_token))
     assert r.status_code == 200 and r.json()["status"] == "completed", r.text
 
-    # 5. Points awarded to the donor
-    r = await client.get("/users/me", headers=_auth(donor_token))
-    assert r.json()["points_balance"] == 10, r.text
-
-    r = await client.get("/users/me/points", headers=_auth(donor_token))
-    assert r.json()["balance"] == 10
-    assert len(r.json()["entries"]) == 1
-
-    # 6. Donor has notifications and an audit trail
+    # 5. Donor has notifications and an audit trail
     r = await client.get("/notifications", headers=_auth(donor_token))
     titles = [n["title"] for n in r.json()]
     assert "Donation accepted" in titles
@@ -84,7 +75,7 @@ async def test_full_donation_loop(client):
     actions = [h["action"] for h in r.json()]
     assert actions == ["created", "accepted", "scheduled", "completed"]
 
-    # 7. Completed donation shows in history
+    # 6. Completed donation shows in history
     r = await client.get("/donations/history", headers=_auth(donor_token))
     assert any(d["id"] == donation_id for d in r.json())
 

@@ -1,7 +1,7 @@
 """
 test_donation_loop.py
 
-Headline end-to-end donation workflow: signup → onboard → donate → accept → schedule → complete → verify points/notifications/history.
+Headline end-to-end donation workflow: signup → onboard → donate → accept → schedule → complete → verify notifications/history.
 
 PREREQUISITE: python scripts/utils/seed.py must be run against the live server's DB first.
 The seeded LGU account (SEEDED_LGU) is required for LGU actions.
@@ -95,20 +95,7 @@ def main() -> int:
     )
     run.check("completed", r.json()["status"] == "completed")
 
-    # 8. Check points awarded
-    r = run.call(
-        "GET",
-        "/users/me/points",
-        expect=200,
-        token=donor_token,
-    )
-    run.check(
-        "points awarded",
-        r.json()["balance"] == 10,
-        detail=str(r.json().get("balance")),
-    )
-
-    # 9. Check notification
+    # 8. Check notification
     r = run.call(
         "GET",
         "/notifications",
@@ -118,7 +105,7 @@ def main() -> int:
     titles = [n["title"] for n in r.json()]
     run.check("completed notification", "Donation completed" in titles)
 
-    # 10. Check donation history
+    # 9. Check donation history
     r = run.call(
         "GET",
         f"/donations/{donation_id}/history",
