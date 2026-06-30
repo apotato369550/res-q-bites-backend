@@ -1,4 +1,4 @@
-"""Seed baseline data: admin, demo LGU + LGU account, badges, reward rule.
+"""Seed baseline data: admin, demo LGU + linked LGU account.
 
 Idempotent-ish: skips rows that already exist by a natural key.
 
@@ -16,34 +16,21 @@ from sqlalchemy import select  # noqa: E402
 from app.core.config import ADMIN_EMAIL, ADMIN_PASSWORD  # noqa: E402
 from app.db.models import (  # noqa: E402
     LGU,
-    Badge,
     Base,
-    RewardRule,
     User,
     UserRole,
 )
 from app.db.session import AsyncSessionLocal, engine  # noqa: E402
 from app.services.security import hash_password  # noqa: E402
 
-# A few Cebu City LGU food banks (approx coordinates) for nearby search demos.
+# A few Cebu City LGU food banks for demos.
 LGUS = [
     {"name": "Barangay Lahug Food Bank", "barangay": "Lahug",
-     "address": "Lahug, Cebu City", "latitude": 10.3340, "longitude": 123.9000},
+     "address": "Lahug, Cebu City"},
     {"name": "Barangay Guadalupe Food Bank", "barangay": "Guadalupe",
-     "address": "Guadalupe, Cebu City", "latitude": 10.3260, "longitude": 123.8870},
+     "address": "Guadalupe, Cebu City"},
     {"name": "Barangay Mabolo Food Bank", "barangay": "Mabolo",
-     "address": "Mabolo, Cebu City", "latitude": 10.3170, "longitude": 123.9120},
-]
-
-BADGES = [
-    {"code": "first_bite", "name": "First Bite", "threshold_points": 10,
-     "description": "Completed your first donation."},
-    {"code": "helping_hand", "name": "Helping Hand", "threshold_points": 50,
-     "description": "Reached 50 points."},
-    {"code": "hunger_hero", "name": "Hunger Hero", "threshold_points": 100,
-     "description": "Reached 100 points."},
-    {"code": "community_champion", "name": "Community Champion", "threshold_points": 250,
-     "description": "Reached 250 points."},
+     "address": "Mabolo, Cebu City"},
 ]
 
 
@@ -68,7 +55,7 @@ async def main() -> None:
             )
             print(f"Seeded admin: {ADMIN_EMAIL}")
 
-        # LGUs (verified so they show up in nearby search)
+        # LGUs (verified)
         lgu_records = []
         for spec in LGUS:
             existing = (
@@ -99,22 +86,6 @@ async def main() -> None:
                 )
             )
             print(f"Seeded LGU account: {demo_lgu_email} (password: lgu12345)")
-
-        # Badges
-        for spec in BADGES:
-            existing = (
-                await db.execute(select(Badge).where(Badge.code == spec["code"]))
-            ).scalars().first()
-            if existing is None:
-                db.add(Badge(**spec))
-
-        # Default active reward rule
-        rule = (
-            await db.execute(select(RewardRule).where(RewardRule.active.is_(True)))
-        ).scalars().first()
-        if rule is None:
-            db.add(RewardRule(name="Default", points_per_donation=10, active=True))
-            print("Seeded default reward rule (10 pts/donation).")
 
         await db.commit()
     print("Seed complete.")
